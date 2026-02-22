@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.30.1"
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.mainnet]
+agent_faucet = "9zkypzFPQ2s3D5UqbYuixt3iXo5ig3ZNWLK1TrbNf5eR"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "mainnet"
+wallet = "~/.config/solana/id.json"

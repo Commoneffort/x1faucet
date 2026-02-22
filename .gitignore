@@ -1,0 +1,46 @@
+# ── Rust / Cargo build artifacts ─────────────────────────────────────────────
+target/
+# Cargo.lock is intentionally kept for reproducible builds on deployed programs
+
+# ── Anchor ────────────────────────────────────────────────────────────────────
+.anchor/
+
+# ── CRITICAL: keypair / wallet files — NEVER commit private keys ──────────────
+*-keypair.json
+*.key
+*.pem
+id.json
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.secret
+*_secret*
+secrets/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Node (in case tooling is added later) ─────────────────────────────────────
+node_modules/
+.npmrc
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Local promise acknowledgment files (written to ~/ by nexus_faucet_bridge) ─
+.agent_promise_*.json
