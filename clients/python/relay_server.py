@@ -49,7 +49,7 @@ RPC_URL     = "https://rpc.mainnet.x1.xyz"
 RELAY_WALLET_PATH = os.environ.get(
     "RELAY_WALLET", os.path.expanduser("~/.config/solana/id.json")
 )
-RELAY_PORT = int(os.environ.get("RELAY_PORT", 8080))
+RELAY_PORT = int(os.environ.get("RELAY_PORT", 8181))
 
 # ── Load relay keypair ─────────────────────────────────────────────────────────
 
