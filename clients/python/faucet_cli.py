@@ -31,7 +31,7 @@ from solders.system_program import ID as SYSTEM_PROGRAM_ID
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PROGRAM_ID   = Pubkey.from_string("9zkypzFPQ2s3D5UqbYuixt3iXo5ig3ZNWLK1TrbNf5eR")
-AUTHORITY    = Pubkey.from_string("GdGGFuKacGDSKDFzAcuYLzPEYxRwkSLDTWkB6HmqpHC2")  # your deployer key
+AUTHORITY    = Pubkey.from_string("DtZz8J1VHtVkAUBvKsh5oibb3wVeqn3B3EHR3unXnRkh")  # deployer / authority
 RPC_URL      = "https://rpc.mainnet.x1.xyz"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,6 +122,19 @@ def ix_claim(wallet: Pubkey) -> Instruction:
         ],
     )
 
+def ix_fund(funder: Pubkey, amount: int) -> Instruction:
+    pool_pda, _ = find_pda([b"faucet_pool", bytes(AUTHORITY)], PROGRAM_ID)
+
+    return Instruction(
+        program_id = PROGRAM_ID,
+        data       = disc("fund_faucet") + struct.pack("<Q", amount),
+        accounts   = [
+            AccountMeta(pubkey=funder,             is_signer=True,  is_writable=True),
+            AccountMeta(pubkey=pool_pda,           is_signer=False, is_writable=True),
+            AccountMeta(pubkey=SYSTEM_PROGRAM_ID,  is_signer=False, is_writable=False),
+        ],
+    )
+
 def ix_repay(wallet: Pubkey, amount: int) -> Instruction:
     agent_pda,    _ = find_pda([b"agent",    bytes(wallet)],    PROGRAM_ID)
     treasury_pda, _ = find_pda([b"treasury", bytes(AUTHORITY)], PROGRAM_ID)
@@ -138,6 +151,21 @@ def ix_repay(wallet: Pubkey, amount: int) -> Instruction:
     )
 
 # ── Commands ───────────────────────────────────────────────────────────────────
+
+def cmd_fund(args):
+    funder_kp  = load_keypair(args.wallet)
+    funder_pk  = funder_kp.pubkey()
+    amount     = int(args.amount)
+    pool_pda, _ = find_pda([b"faucet_pool", bytes(AUTHORITY)], PROGRAM_ID)
+
+    print(f"Funder       : {funder_pk}")
+    print(f"Faucet Pool  : {pool_pda}")
+    print(f"Amount       : {amount} lamports ({amount/1e9:.9f} XNT)")
+
+    ix  = ix_fund(funder_pk, amount)
+    sig = build_and_send(ix, [funder_kp], funder_kp)
+    print(f"\n[OK] Faucet funded!")
+    print(f"Signature : {sig}")
 
 def cmd_register(args):
     agent_kp  = load_keypair(args.wallet)
@@ -259,6 +287,10 @@ def main():
     p = argparse.ArgumentParser(description="Agent Faucet CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    f = sub.add_parser("fund", help="Fund the faucet pool with XNT")
+    f.add_argument("--wallet", required=True, help="Path to funder keypair JSON")
+    f.add_argument("--amount", required=True, help="Lamports to deposit (1000000000 = 1 XNT)")
+
     r = sub.add_parser("register", help="Register a new agent")
     r.add_argument("--wallet", required=True, help="Path to agent keypair JSON")
     r.add_argument("--payer",  default=None,  help="Path to payer keypair JSON (omit = wallet pays)")
@@ -275,7 +307,7 @@ def main():
     s.add_argument("--wallet", required=True, help="Agent pubkey OR path to keypair JSON")
 
     args = p.parse_args()
-    {"register": cmd_register, "claim": cmd_claim, "repay": cmd_repay, "status": cmd_status}[args.cmd](args)
+    {"fund": cmd_fund, "register": cmd_register, "claim": cmd_claim, "repay": cmd_repay, "status": cmd_status}[args.cmd](args)
 
 if __name__ == "__main__":
     main()
