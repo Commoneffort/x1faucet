@@ -202,10 +202,12 @@ def cmd_register(args):
 
 def cmd_claim(args):
     agent_kp  = load_keypair(args.wallet)
+    payer_kp  = load_keypair(args.payer) if args.payer else agent_kp
     wallet_pk = agent_kp.pubkey()
     agent_pda, _ = find_pda([b"agent", bytes(wallet_pk)], PROGRAM_ID)
 
     print(f"Agent wallet : {wallet_pk}")
+    print(f"Payer        : {payer_kp.pubkey()}")
     print(f"Agent PDA    : {agent_pda}")
 
     # Check registered
@@ -214,8 +216,10 @@ def cmd_claim(args):
         print("\n[!] Agent not registered. Run `register` first.")
         sys.exit(1)
 
-    ix  = ix_claim(wallet_pk)
-    sig = build_and_send(ix, [agent_kp], agent_kp)
+    ix = ix_claim(wallet_pk)
+    # Payer covers tx fee; agent must still sign to prove wallet ownership
+    signers = [payer_kp, agent_kp] if payer_kp.pubkey() != agent_kp.pubkey() else [agent_kp]
+    sig = build_and_send(ix, signers, payer_kp)
     print(f"\n[OK] Airdrop claimed: 0.21 XNT (210,000,000 lamports)")
     print(f"Signature : {sig}")
     print(f"Debt      : 262,500,000 lamports (0.2625 XNT) — repay anytime")
@@ -298,6 +302,7 @@ def main():
 
     c = sub.add_parser("claim", help="Claim the one-time airdrop (0.21 XNT)")
     c.add_argument("--wallet", required=True, help="Path to agent keypair JSON")
+    c.add_argument("--payer",  default=None,  help="Path to payer keypair JSON (omit = agent pays tx fee)")
 
     d = sub.add_parser("repay", help="Repay debt to treasury")
     d.add_argument("--wallet", required=True, help="Path to agent keypair JSON")
