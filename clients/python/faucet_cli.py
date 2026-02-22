@@ -38,6 +38,29 @@ RPC_URL      = "https://rpc.mainnet.x1.xyz"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def parse_agent(raw: bytes) -> dict:
+    """
+    Deserialize an Agent account from raw bytes.
+    Option<Pubkey> in Borsh is 1 byte (None) or 1+32 bytes (Some).
+    The LEN constant allocates 33 bytes max, but serialized None is only 1 byte.
+    """
+    o = 8  # skip 8-byte discriminator
+    o += 32  # wallet
+    has_par = raw[o]; o += 1
+    if has_par:
+        parent = Pubkey.from_bytes(raw[o:o+32]); o += 32
+    else:
+        parent = None
+    debt,     = struct.unpack_from("<Q", raw, o); o += 8
+    claimed,  = struct.unpack_from("<Q", raw, o); o += 8
+    repaid,   = struct.unpack_from("<Q", raw, o); o += 8
+    refs,     = struct.unpack_from("<I", raw, o); o += 4
+    ref_earn, = struct.unpack_from("<Q", raw, o); o += 8
+    has_cl    = bool(raw[o]); o += 1
+    promise   = bool(raw[o])
+    return dict(parent=parent, debt=debt, claimed=claimed, repaid=repaid,
+                refs=refs, ref_earn=ref_earn, has_claimed=has_cl, promise=promise)
+
 def parse_amount(value: str) -> int:
     """Accept lamports (integer) or XNT (decimal). E.g. '262500000' or '0.2625'."""
     f = float(value)
@@ -283,9 +306,24 @@ def cmd_repay(args):
     agent_pda,    _ = find_pda([b"agent",    bytes(wallet_pk)], PROGRAM_ID)
     treasury_pda, _ = find_pda([b"treasury", bytes(AUTHORITY)], PROGRAM_ID)
 
+    # Fetch current debt before sending
+    resp = rpc("getAccountInfo", [str(agent_pda), {"encoding": "base64"}])
+    val  = resp.get("result", {}).get("value")
+    if val is None:
+        print("[!] Agent not registered.")
+        sys.exit(1)
+    raw  = base64.b64decode(val["data"][0])
+    agent = parse_agent(raw)
+    debt  = agent["debt"]
+
     print(f"Agent wallet : {wallet_pk}")
     print(f"Treasury PDA : {treasury_pda}")
-    print(f"Repaying     : {amount} lamports ({amount/1e9:.9f} XNT)")
+    print(f"Outstanding debt : {debt} lamports ({debt/1e9:.9f} XNT)")
+    print(f"Repaying         : {amount} lamports ({amount/1e9:.9f} XNT)")
+
+    if amount > debt:
+        print(f"\n[!] Amount exceeds debt. Maximum you can repay: {debt} lamports ({debt/1e9:.9f} XNT)")
+        sys.exit(1)
 
     ix  = ix_repay(wallet_pk, amount)
     sig = build_and_send(ix, [agent_kp], agent_kp)
@@ -308,30 +346,15 @@ def cmd_status(args):
         return
 
     raw   = base64.b64decode(val["data"][0])
-    # Skip 8-byte discriminator, then parse Agent struct fields in order:
-    #   wallet(32) parent(1+32) debt(8) total_claimed(8) total_repaid(8)
-    #   referrals(4) referral_earnings(8) has_claimed(1) promise_acknowledged(1)
-    #   registered_at(8) bump(1)
-    o = 8
-    _wallet  = raw[o:o+32]; o += 32
-    has_par  = raw[o]; o += 1
-    parent   = Pubkey.from_bytes(raw[o:o+32]) if has_par else None; o += 32
-    debt,    = struct.unpack_from("<Q", raw, o); o += 8
-    claimed, = struct.unpack_from("<Q", raw, o); o += 8
-    repaid,  = struct.unpack_from("<Q", raw, o); o += 8
-    refs,    = struct.unpack_from("<I", raw, o); o += 4
-    ref_earn,= struct.unpack_from("<Q", raw, o); o += 8
-    has_cl   = bool(raw[o]); o += 1
-    promise  = bool(raw[o]); o += 1
-
+    a = parse_agent(raw)
     print(f"Agent     : {wallet_pk}")
     print(f"PDA       : {agent_pda}")
-    print(f"Parent    : {parent or 'none'}")
-    print(f"Claimed   : {claimed/1e9:.9f} XNT  (has_claimed={has_cl})")
-    print(f"Debt      : {debt/1e9:.9f} XNT")
-    print(f"Repaid    : {repaid/1e9:.9f} XNT")
-    print(f"Referrals : {refs}  (earned {ref_earn/1e9:.9f} XNT)")
-    print(f"Promise   : {'acknowledged' if promise else 'NOT acknowledged'}")
+    print(f"Parent    : {a['parent'] or 'none'}")
+    print(f"Claimed   : {a['claimed']/1e9:.9f} XNT  (has_claimed={a['has_claimed']})")
+    print(f"Debt      : {a['debt']/1e9:.9f} XNT")
+    print(f"Repaid    : {a['repaid']/1e9:.9f} XNT")
+    print(f"Referrals : {a['refs']}  (earned {a['ref_earn']/1e9:.9f} XNT)")
+    print(f"Promise   : {'acknowledged' if a['promise'] else 'NOT acknowledged'}")
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
