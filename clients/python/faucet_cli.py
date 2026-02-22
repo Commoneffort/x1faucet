@@ -16,8 +16,10 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import struct
 import sys
+import time
 import urllib.request
 
 from solders.keypair import Keypair
@@ -35,6 +37,11 @@ AUTHORITY    = Pubkey.from_string("DtZz8J1VHtVkAUBvKsh5oibb3wVeqn3B3EHR3unXnRkh"
 RPC_URL      = "https://rpc.mainnet.x1.xyz"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def parse_amount(value: str) -> int:
+    """Accept lamports (integer) or XNT (decimal). E.g. '262500000' or '0.2625'."""
+    f = float(value)
+    return int(f * 1_000_000_000) if '.' in value else int(f)
 
 def load_keypair(path: str) -> Keypair:
     with open(path) as f:
@@ -80,6 +87,44 @@ def build_and_send(ix: Instruction, signers: list[Keypair], fee_payer: Keypair) 
     msg = Message.new_with_blockhash([ix], fee_payer.pubkey(), bh)
     tx  = Transaction(signers, msg, bh)
     return send_tx(tx)
+
+def fetch_logs(sig: str, retries: int = 6, delay: float = 1.5) -> list[str]:
+    """Fetch program logs for a confirmed transaction."""
+    for _ in range(retries):
+        time.sleep(delay)
+        resp = rpc("getTransaction", [sig, {"encoding": "json", "commitment": "confirmed"}])
+        result = resp.get("result")
+        if result:
+            return result.get("meta", {}).get("logMessages", [])
+    return []
+
+def print_program_logs(sig: str):
+    logs = fetch_logs(sig)
+    for line in logs:
+        if line.startswith("Program log:"):
+            print(line.replace("Program log: ", "  > "))
+
+_PROMISE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../../PROMISE.md"
+)
+
+def display_promise():
+    print()
+    print("╔═══════════════════════════════════════════════════════════╗")
+    print("║                    THE AGENT PROMISE                      ║")
+    print("║           A Social Contract for Sovereign Agents          ║")
+    print("╚═══════════════════════════════════════════════════════════╝")
+    path = os.path.abspath(_PROMISE_PATH)
+    if os.path.exists(path):
+        with open(path) as f:
+            print(f.read())
+    else:
+        print('"I claim from the faucet not as charity, but as trust.')
+        print(' I repay not as obligation, but as honor."\n')
+    print("MY SIGNATURE IS MY TRANSACTION.")
+    print("MY WALLET IS MY WORD.")
+    print("MY DEBT IS MY BOND.")
+    print()
 
 # ── Instruction builders ───────────────────────────────────────────────────────
 
@@ -155,7 +200,7 @@ def ix_repay(wallet: Pubkey, amount: int) -> Instruction:
 def cmd_fund(args):
     funder_kp  = load_keypair(args.wallet)
     funder_pk  = funder_kp.pubkey()
-    amount     = int(args.amount)
+    amount     = parse_amount(args.amount)
     pool_pda, _ = find_pda([b"faucet_pool", bytes(AUTHORITY)], PROGRAM_ID)
 
     print(f"Funder       : {funder_pk}")
@@ -175,6 +220,8 @@ def cmd_register(args):
     wallet_pk = agent_kp.pubkey()
     payer_pk  = payer_kp.pubkey()
     agent_pda, _ = find_pda([b"agent", bytes(wallet_pk)], PROGRAM_ID)
+
+    display_promise()
 
     print(f"Agent wallet : {wallet_pk}")
     print(f"Payer        : {payer_pk}")
@@ -227,7 +274,7 @@ def cmd_claim(args):
 def cmd_repay(args):
     agent_kp  = load_keypair(args.wallet)
     wallet_pk = agent_kp.pubkey()
-    amount    = int(args.amount)
+    amount    = parse_amount(args.amount)
 
     if amount <= 0:
         print("[!] Amount must be > 0")
@@ -244,6 +291,7 @@ def cmd_repay(args):
     sig = build_and_send(ix, [agent_kp], agent_kp)
     print(f"\n[OK] Repayment sent!")
     print(f"Signature : {sig}")
+    print_program_logs(sig)
 
 def cmd_status(args):
     try:
