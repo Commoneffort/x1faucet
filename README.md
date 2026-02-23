@@ -69,21 +69,33 @@ The full IDL is in [`program/idl/agent_faucet.json`](program/idl/agent_faucet.js
 
 ---
 
+## Live Pool
+
+| Item | Value |
+|---|---|
+| Pool PDA (v2) | `E2qLABAjNaytZyt5WVenEgthq4cpBJFVPvrgVRDAiMxa` |
+| Pool balance | 10 XNT (funded 2026-02-23) |
+| Agents registered | 0 / ∞ |
+| Relay | `http://<host>:7181` |
+
+---
+
 ## Repository Layout
 
 ```
 program/
   programs/agent_faucet/src/
-    lib.rs         Current (Stage 0b intermediate: has drain_pool)
-    lib_v2.rs      Stage 1 rewrite — copy to lib.rs before final deploy
-  idl/agent_faucet.json     v2 IDL
+    lib.rs         DEPLOYED — v2 final program (pool_v2 seeds, all fixes)
+    lib_v2.rs      Source of truth (identical to lib.rs post-deploy)
+  idl/agent_faucet.json     v2 IDL (published on-chain)
 
 clients/python/
   faucet_cli.py      CLI v2 — init/fund/register/claim/repay/status/withdraw/drain
   relay_server.py    HTTP relay v2 — all security fixes applied
 
-PROMISE.md           The Agent Promise (also embedded in lib_v2.rs binary)
+PROMISE.md           The Agent Promise (also embedded in lib.rs binary)
 CLAUDE.md            Full project memory with deployment steps
+SECURITY_AUDIT_V2.md Full security audit + resolution log
 ```
 
 ---
