@@ -52,6 +52,7 @@ from solders.instruction import AccountMeta, Instruction
 from solders.keypair import Keypair
 from solders.message import Message
 from solders.pubkey import Pubkey
+from solders.signature import Signature
 from solders.system_program import ID as SYSTEM_PROGRAM_ID
 from solders.transaction import Transaction
 
@@ -259,11 +260,18 @@ def ix_claim(wallet: Pubkey) -> Instruction:
 def build_unsigned_for_agent(ix: Instruction, wallet: Pubkey) -> str:
     """
     Builds a partially-signed transaction (relay signs as fee payer).
-    Agent must add their own signature then POST to /submit.
+    Relay occupies signer slot 0; all other signer slots get null signatures.
+    Agent must fill their slot and POST to /submit.
     """
     bh  = Hash.from_string(latest_blockhash())
     msg = Message.new_with_blockhash([ix], RELAY_KP.pubkey(), bh)
-    tx  = Transaction([RELAY_KP], msg, bh)
+    # Relay signs its own slot (index 0 — fee payer is always first signer).
+    # Remaining required signer slots get null (all-zero) signatures for the
+    # agent to fill before submitting.
+    relay_sig  = RELAY_KP.sign_message(bytes(msg))
+    n_signers  = msg.header.num_required_signatures
+    sigs       = [relay_sig] + [Signature.default()] * (n_signers - 1)
+    tx         = Transaction.populate(msg, sigs)
     return base64.b64encode(bytes(tx)).decode()
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
