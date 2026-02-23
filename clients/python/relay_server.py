@@ -60,6 +60,37 @@ RELAY_WALLET_PATH = os.environ.get(
 )
 RELAY_PORT = int(os.environ.get("RELAY_PORT", 7181))
 
+# Maximum number of registrations the relay will ever sponsor.
+# Each registration costs the relay ~0.0014 XNT (rent + fee).
+# Adjust to match how much XNT you are willing to spend on sponsorship.
+RELAY_MAX_REGISTRATIONS = int(os.environ.get("RELAY_MAX_REGISTRATIONS", 500))
+
+# Persistent counter file — survives restarts.
+_COUNTER_FILE = os.path.join(os.path.dirname(__file__), ".relay_reg_count")
+
+def _load_counter() -> int:
+    try:
+        return int(open(_COUNTER_FILE).read().strip())
+    except Exception:
+        return 0
+
+def _save_counter(n: int) -> None:
+    with open(_COUNTER_FILE, "w") as f:
+        f.write(str(n))
+
+_reg_count = _load_counter()
+
+def _check_and_bump_registrations() -> None:
+    global _reg_count
+    if _reg_count >= RELAY_MAX_REGISTRATIONS:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Relay sponsorship limit reached ({RELAY_MAX_REGISTRATIONS} registrations). "
+                   "Contact the operator to raise the cap.",
+        )
+    _reg_count += 1
+    _save_counter(_reg_count)
+
 # ── Load relay keypair ─────────────────────────────────────────────────────────
 
 def load_relay_keypair() -> Keypair:
@@ -205,6 +236,8 @@ def health():
         "relay": str(RELAY_KP.pubkey()),
         "program": str(PROGRAM_ID),
         "rpc": RPC_URL,
+        "registrations_sponsored": _reg_count,
+        "registrations_cap": RELAY_MAX_REGISTRATIONS,
     }
 
 
@@ -235,6 +268,7 @@ def get_register_tx(request: Request, wallet: str, parent: str | None = None):
     if resp.get("result", {}).get("value") is not None:
         raise HTTPException(status_code=409, detail="Agent already registered")
 
+    _check_and_bump_registrations()
     ix = ix_register(wallet_pk, parent_pk)
     tx_b64 = build_unsigned_for_agent(ix, wallet_pk)
     return {"tx": tx_b64, "agent_pda": str(agent_pda)}
@@ -308,6 +342,7 @@ def register_oneshot(request: Request, req: RegisterRequest):
     if resp.get("result", {}).get("value") is not None:
         raise HTTPException(status_code=409, detail="Agent already registered")
 
+    _check_and_bump_registrations()
     ix  = ix_register(wallet_pk, parent_pk)
     bh  = Hash.from_string(latest_blockhash())
     msg = Message.new_with_blockhash([ix], RELAY_KP.pubkey(), bh)
