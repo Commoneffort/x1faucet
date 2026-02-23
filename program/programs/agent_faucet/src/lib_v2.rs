@@ -103,7 +103,7 @@ pub enum FaucetError {
 /// FaucetPool — single program PDA that holds XNT and tracks all economics.
 /// Permissionlessly fundable. All repayments flow back here.
 ///
-/// LEN = 8+32+33+8+8+8+8+8+8+8+4+1 = 134
+/// LEN = 8+32+33+8+8+8+8+8+8+8+8+4+1 = 142
 #[account]
 pub struct FaucetPool {
     pub authority: Pubkey,
@@ -134,8 +134,15 @@ impl FaucetPool {
         + 8                    // referral_bonus_percent
         + 4                    // total_agents
         + 1;                   // bump
-        // = 134
+        // = 142
 }
+
+// Compile-time guard: catches future struct/LEN drift before deployment.
+// Note: mem::size_of does not include the 8-byte Anchor discriminator.
+const _: () = assert!(
+    std::mem::size_of::<FaucetPool>() <= FaucetPool::LEN - 8,
+    "FaucetPool::LEN is too small for the struct — update LEN"
+);
 
 /// Agent — one PDA per wallet. Created at register, debt set at claim.
 /// promise_acknowledged is set TRUE at claim (not register) when the
@@ -272,6 +279,15 @@ pub mod agent_faucet {
         let agent_rent = Rent::get()?.minimum_balance(Agent::LEN);
         require!(ctx.accounts.faucet_pool.balance >= agent_rent, FaucetError::InsufficientBalance);
 
+        // Explicit rent floor: pool must survive after lamport deduction (INFO-1 fix)
+        let rent = Rent::get()?;
+        let pool_rent_min = rent.minimum_balance(FaucetPool::LEN);
+        let pool_lamports = ctx.accounts.faucet_pool.to_account_info().lamports();
+        require!(
+            pool_lamports >= pool_rent_min.checked_add(agent_rent).unwrap(),
+            FaucetError::InsufficientBalance
+        );
+
         // Capture pool key before any mutable borrows
         let pool_key = ctx.accounts.faucet_pool.key();
         let wallet_key = ctx.accounts.wallet.key();
@@ -282,13 +298,17 @@ pub mod agent_faucet {
         **ctx.accounts.payer.to_account_info().try_borrow_mut_lamports()? += agent_rent;
 
         // State updates AFTER lamport operations
-        if let Some(parent_agent) = &mut ctx.accounts.parent_agent {
-            parent_agent.referrals += 1;
+        // LOW-1 fix: only increment parent referrals when parent arg is actually Some.
+        if parent.is_some() {
+            if let Some(parent_agent) = &mut ctx.accounts.parent_agent {
+                parent_agent.referrals += 1;
+            }
         }
 
         let pool = &mut ctx.accounts.faucet_pool;
         pool.balance = pool.balance.saturating_sub(agent_rent);
-        pool.total_agents += 1;
+        // LOW-2 fix: checked increment; panics if u32::MAX reached (practically impossible).
+        pool.total_agents = pool.total_agents.checked_add(1).unwrap();
 
         let agent = &mut ctx.accounts.agent;
         agent.wallet               = wallet_key;
@@ -431,6 +451,19 @@ pub mod agent_faucet {
         // Pre-compute whether we need to pay referral on this repayment
         let will_pay_referral = new_debt == 0 && referral_pending > 0 && agent_parent.is_some();
 
+        // HIGH-1 + HIGH-2 fix: validate parent_wallet before any lamport ops.
+        // parent_wallet must be provided when will_pay_referral is true, and its
+        // key must match agent.parent to prevent referral theft.
+        if will_pay_referral {
+            let parent_wallet = ctx.accounts.parent_wallet
+                .as_ref()
+                .ok_or(FaucetError::InvalidParentAgent)?;
+            require!(
+                Some(parent_wallet.key()) == agent_parent,
+                FaucetError::InvalidParentAgent
+            );
+        }
+
         // CPI BEFORE any mutable borrows: wallet → faucet_pool (CRIT-01 fix)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
@@ -441,13 +474,13 @@ pub mod agent_faucet {
         );
         system_program::transfer(cpi_ctx, amount)?;
 
-        // Referral payout lamport ops BEFORE mutable borrows (if applicable)
+        // Referral payout lamport ops BEFORE mutable borrows (if applicable).
+        // Pool deduction and parent credit are now always paired — lamport
+        // conservation is always maintained (HIGH-2 fix).
         if will_pay_referral {
-            // pool lamports → parent wallet (referral was reserved in pool; MED-01 fix)
+            let parent_wallet = ctx.accounts.parent_wallet.as_ref().unwrap();
             **ctx.accounts.faucet_pool.to_account_info().try_borrow_mut_lamports()? -= referral_pending;
-            if let Some(parent_wallet) = &ctx.accounts.parent_wallet {
-                **parent_wallet.try_borrow_mut_lamports()? += referral_pending;
-            }
+            **parent_wallet.try_borrow_mut_lamports()? += referral_pending;
         }
 
         // State updates AFTER all AccountInfo operations

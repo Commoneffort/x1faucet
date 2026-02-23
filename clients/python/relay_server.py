@@ -27,6 +27,7 @@ Env vars (optional):
   RELAY_PORT     port to listen on (default: 7181)
 """
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -72,9 +73,14 @@ RELAY_MAX_REGISTRATIONS = int(os.environ.get("RELAY_MAX_REGISTRATIONS", 500))
 _COUNTER_FILE = os.path.join(os.path.dirname(__file__), ".relay_reg_count")
 
 def _load_counter() -> int:
+    # INFO-3 fix: distinguish "file not found" (normal first run) from
+    # "file exists but corrupt" (warn loudly rather than silently resetting).
+    if not os.path.exists(_COUNTER_FILE):
+        return 0
     try:
         return int(open(_COUNTER_FILE).read().strip())
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] Counter file corrupt or unreadable: {e}. Starting at 0.", file=sys.stderr)
         return 0
 
 def _save_counter(n: int) -> None:
@@ -82,17 +88,20 @@ def _save_counter(n: int) -> None:
         f.write(str(n))
 
 _reg_count = _load_counter()
+# MED-NEW-2 fix: asyncio lock prevents concurrent requests from bypassing the cap.
+_reg_lock = asyncio.Lock()
 
-def _check_and_bump_registrations() -> None:
+async def _check_and_bump_registrations() -> None:
     global _reg_count
-    if _reg_count >= RELAY_MAX_REGISTRATIONS:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Relay sponsorship limit reached ({RELAY_MAX_REGISTRATIONS}). "
-                   "Contact the operator to raise the cap.",
-        )
-    _reg_count += 1
-    _save_counter(_reg_count)
+    async with _reg_lock:
+        if _reg_count >= RELAY_MAX_REGISTRATIONS:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Relay sponsorship limit reached ({RELAY_MAX_REGISTRATIONS}). "
+                       "Contact the operator to raise the cap.",
+            )
+        _reg_count += 1
+        _save_counter(_reg_count)
 
 # ── Load relay keypair ─────────────────────────────────────────────────────────
 
@@ -260,7 +269,11 @@ def build_unsigned_for_agent(ix: Instruction, wallet: Pubkey) -> str:
 # ── Middleware ─────────────────────────────────────────────────────────────────
 
 class LimitUploadSize(BaseHTTPMiddleware):
-    """Relay-5: Reject requests with body larger than max_size bytes."""
+    """
+    Relay-5 + MED-NEW-1 fix: Enforce body size limit for ALL requests.
+    Checks Content-Length header first (fast path), then reads the actual
+    body stream to catch chunked transfer encoding that omits the header.
+    """
     def __init__(self, app, max_size: int = 65536):  # 64KB default
         super().__init__(app)
         self.max_size = max_size
@@ -276,6 +289,22 @@ class LimitUploadSize(BaseHTTPMiddleware):
                     )
             except ValueError:
                 return Response(content="Invalid content-length", status_code=400)
+
+        # MED-NEW-1 fix: also enforce against chunked bodies (no Content-Length header).
+        # Read the stream, accumulate, and re-inject for downstream handlers.
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > self.max_size:
+                return Response(
+                    content="Request body too large (max 64KB)",
+                    status_code=413
+                )
+
+        async def _receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive
         return await call_next(request)
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
@@ -319,7 +348,7 @@ def health():
 
 @app.get("/tx/register")
 @limiter.limit("5/hour")
-def get_register_tx(request: Request, wallet: str, parent: str | None = None):
+async def get_register_tx(request: Request, wallet: str, parent: str | None = None):
     """
     Build a register transaction for the agent to sign.
     Relay is fee payer — agent needs 0 XNT. Pool reimburses rent.
@@ -346,7 +375,7 @@ def get_register_tx(request: Request, wallet: str, parent: str | None = None):
     if resp.get("result", {}).get("value") is not None:
         raise HTTPException(status_code=409, detail="Agent already registered")
 
-    _check_and_bump_registrations()
+    await _check_and_bump_registrations()
     ix     = ix_register(wallet_pk, parent_pk)
     tx_b64 = build_unsigned_for_agent(ix, wallet_pk)
     return {"tx": tx_b64, "agent_pda": str(agent_pda)}

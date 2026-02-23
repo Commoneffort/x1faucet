@@ -178,7 +178,7 @@ Account discriminators:
 
 ## Account structures (v2)
 
-### FaucetPool (LEN = 134)
+### FaucetPool (LEN = 142)
 ```
 discriminator(8) authority(32) multisig Option<Pubkey>(1+32)
 balance(8) total_distributed(8) total_repaid(8)
