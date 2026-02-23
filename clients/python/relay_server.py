@@ -299,7 +299,8 @@ class LimitUploadSize(BaseHTTPMiddleware):
                 return Response(content="Invalid content-length", status_code=400)
 
         # MED-NEW-1 fix: also enforce against chunked bodies (no Content-Length header).
-        # Read the stream, accumulate, and re-inject for downstream handlers.
+        # Read the stream, accumulate, then store as _body so Starlette's
+        # _CachedRequest.wrapped_receive (used by call_next) returns the real body.
         body = b""
         async for chunk in request.stream():
             body += chunk
@@ -309,10 +310,10 @@ class LimitUploadSize(BaseHTTPMiddleware):
                     status_code=413
                 )
 
-        async def _receive():
-            return {"type": "http.request", "body": body, "more_body": False}
-
-        request._receive = _receive
+        # Starlette ≥0.21 uses _CachedRequest whose wrapped_receive checks _body
+        # before _stream_consumed.  Setting _body here ensures the downstream app
+        # receives the complete body even though we already consumed the stream.
+        request._body = body
         return await call_next(request)
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
