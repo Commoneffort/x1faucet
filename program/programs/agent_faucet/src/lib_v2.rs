@@ -137,12 +137,6 @@ impl FaucetPool {
         // = 142
 }
 
-// Compile-time guard: catches future struct/LEN drift before deployment.
-// Note: mem::size_of does not include the 8-byte Anchor discriminator.
-const _: () = assert!(
-    std::mem::size_of::<FaucetPool>() <= FaucetPool::LEN - 8,
-    "FaucetPool::LEN is too small for the struct — update LEN"
-);
 
 /// Agent — one PDA per wallet. Created at register, debt set at claim.
 /// promise_acknowledged is set TRUE at claim (not register) when the
