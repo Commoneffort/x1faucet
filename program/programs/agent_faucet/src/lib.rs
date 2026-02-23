@@ -456,6 +456,37 @@ pub mod agent_faucet {
         Ok(())
     }
 
+    // ── Drain Pool ────────────────────────────────────────────────────────────
+    //
+    // STAGE 0b INTERMEDIATE — authority-only emergency drain of the pool PDA.
+    // Transfers all pool lamports above rent-exempt minimum to the authority.
+    // Used once before the Stage 1 full redeploy to recover old pool funds.
+    //
+    pub fn drain_pool(ctx: Context<DrainPool>) -> Result<()> {
+        let rent = Rent::get()?;
+        let rent_min = rent.minimum_balance(FaucetPool::LEN);
+        let pool_lamports = ctx.accounts.faucet_pool.to_account_info().lamports();
+
+        require!(pool_lamports > rent_min, FaucetError::InsufficientBalance);
+
+        let drain_amount = pool_lamports - rent_min;
+
+        // Direct lamport manipulation: pool is program-owned
+        **ctx.accounts.faucet_pool.to_account_info().try_borrow_mut_lamports()? -= drain_amount;
+        **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += drain_amount;
+
+        // Update tracked balance
+        let pool = &mut ctx.accounts.faucet_pool;
+        pool.balance = pool.balance.saturating_sub(drain_amount);
+
+        msg!(
+            "Pool drained: {} lamports to authority {}. Pool rent-exempt floor remains.",
+            drain_amount,
+            ctx.accounts.authority.key()
+        );
+        Ok(())
+    }
+
     // ── Withdraw Treasury ─────────────────────────────────────────────────────
     //
     // Sends accumulated native XNT from the treasury PDA to any recipient.
@@ -690,4 +721,23 @@ pub struct WithdrawTreasury<'info> {
     /// CHECK: Recipient is authority-chosen. Verified by the withdrawal signer.
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
+}
+
+// ─── Stage 0b: Drain Pool Context ─────────────────────────────────────────────
+
+#[derive(Accounts)]
+pub struct DrainPool<'info> {
+    /// Only the single authority can drain the pool.
+    #[account(
+        mut,
+        address = faucet_pool.authority @ FaucetError::Unauthorized
+    )]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"faucet_pool", faucet_pool.authority.as_ref()],
+        bump = faucet_pool.bump
+    )]
+    pub faucet_pool: Account<'info, FaucetPool>,
 }

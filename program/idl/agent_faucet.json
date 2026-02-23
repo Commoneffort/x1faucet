@@ -2,9 +2,9 @@
   "address": "9zkypzFPQ2s3D5UqbYuixt3iXo5ig3ZNWLK1TrbNf5eR",
   "metadata": {
     "name": "agent_faucet",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "spec": "0.1.0",
-    "description": "X1 native XNT faucet economy — register, claim, repay"
+    "description": "X1 native XNT faucet economy v2 — register, claim, repay. No treasury; pool_v2 seeds."
   },
   "instructions": [
     {
@@ -12,8 +12,16 @@
       "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
       "accounts": [
         { "name": "authority",      "writable": true, "signer": true },
-        { "name": "faucet_pool",    "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [102,97,117,99,101,116,95,112,111,111,108] }, { "kind": "account", "path": "authority" }] } },
-        { "name": "treasury",       "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "authority" }] } },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "authority" }
+            ]
+          }
+        },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
@@ -24,8 +32,17 @@
       "name": "fund_faucet",
       "discriminator": [85, 161, 40, 227, 85, 213, 44, 199],
       "accounts": [
-        { "name": "funder",         "writable": true, "signer": true },
-        { "name": "faucet_pool",    "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [102,97,117,99,101,116,95,112,111,111,108] }, { "kind": "account", "path": "faucet_pool.authority" }] } },
+        { "name": "funder",       "writable": true, "signer": true },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
@@ -36,15 +53,37 @@
       "name": "register_agent",
       "discriminator": [135, 157, 66, 195, 2, 113, 175, 30],
       "accounts": [
-        { "name": "wallet",         "signer": true },
-        { "name": "payer",          "writable": true, "signer": true },
-        { "name": "agent",          "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [97,103,101,110,116] }, { "kind": "account", "path": "wallet" }] } },
-        { "name": "faucet_pool",    "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [102,97,117,99,101,116,95,112,111,111,108] }, { "kind": "account", "path": "faucet_pool.authority" }] } },
+        { "name": "wallet",       "signer": true },
+        { "name": "payer",        "writable": true, "signer": true },
+        {
+          "name": "agent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [97,103,101,110,116] },
+              { "kind": "account", "path": "wallet" }
+            ]
+          }
+        },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        },
+        {
+          "name": "parent_agent",
+          "writable": true,
+          "optional": true
+        },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
-        { "name": "parent",               "type": { "option": "pubkey" } },
-        { "name": "acknowledge_promise",  "type": "bool" }
+        { "name": "parent", "type": { "option": "pubkey" } }
       ]
     },
     {
@@ -52,9 +91,26 @@
       "discriminator": [137, 50, 122, 111, 89, 254, 8, 20],
       "accounts": [
         { "name": "wallet",      "writable": true, "signer": true },
-        { "name": "agent",       "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [97,103,101,110,116] }, { "kind": "account", "path": "wallet" }] } },
-        { "name": "faucet_pool", "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [102,97,117,99,101,116,95,112,111,111,108] }, { "kind": "account", "path": "faucet_pool.authority" }] } },
-        { "name": "treasury",    "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "treasury.authority" }] } }
+        {
+          "name": "agent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [97,103,101,110,116] },
+              { "kind": "account", "path": "wallet" }
+            ]
+          }
+        },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        }
       ],
       "args": []
     },
@@ -62,9 +118,37 @@
       "name": "repay_debt",
       "discriminator": [79, 200, 30, 15, 252, 22, 162, 8],
       "accounts": [
-        { "name": "wallet",         "writable": true, "signer": true },
-        { "name": "agent",          "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [97,103,101,110,116] }, { "kind": "account", "path": "wallet" }] } },
-        { "name": "treasury",       "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "treasury.authority" }] } },
+        { "name": "wallet",       "writable": true, "signer": true },
+        {
+          "name": "agent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [97,103,101,110,116] },
+              { "kind": "account", "path": "wallet" }
+            ]
+          }
+        },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        },
+        {
+          "name": "parent_wallet",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "parent_agent",
+          "writable": true,
+          "optional": true
+        },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
@@ -72,37 +156,41 @@
       ]
     },
     {
-      "name": "auto_repay",
-      "discriminator": [112, 104, 176, 118, 250, 61, 48, 164],
-      "accounts": [
-        { "name": "wallet",         "writable": true, "signer": true },
-        { "name": "agent",          "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [97,103,101,110,116] }, { "kind": "account", "path": "wallet" }] } },
-        { "name": "treasury",       "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "treasury.authority" }] } },
-        { "name": "system_program", "address": "11111111111111111111111111111111" }
-      ],
-      "args": [
-        { "name": "earnings", "type": "u64" }
-      ]
-    },
-    {
       "name": "set_multisig",
       "discriminator": [251, 6, 245, 35, 115, 42, 77, 186],
       "accounts": [
-        { "name": "authority", "writable": true, "signer": true },
-        { "name": "treasury",  "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "treasury.authority" }] } }
+        { "name": "authority",   "writable": true, "signer": true },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        }
       ],
       "args": [
         { "name": "multisig", "type": { "option": "pubkey" } }
       ]
     },
     {
-      "name": "withdraw_treasury",
-      "discriminator": [40, 63, 122, 158, 144, 216, 83, 96],
+      "name": "withdraw_pool",
+      "discriminator": [190, 43, 148, 248, 68, 5, 215, 136],
       "accounts": [
-        { "name": "authority",  "writable": true, "signer": true },
-        { "name": "treasury",   "writable": true, "pda": { "seeds": [{ "kind": "const", "value": [116,114,101,97,115,117,114,121] }, { "kind": "account", "path": "treasury.authority" }] } },
-        { "name": "recipient",  "writable": true },
-        { "name": "system_program", "address": "11111111111111111111111111111111" }
+        { "name": "authority",   "writable": true, "signer": true },
+        {
+          "name": "faucet_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112,111,111,108,95,118,50] },
+              { "kind": "account", "path": "faucet_pool.authority" }
+            ]
+          }
+        },
+        { "name": "recipient", "writable": true }
       ],
       "args": [
         { "name": "amount", "type": "u64" }
@@ -117,10 +205,6 @@
     {
       "name": "FaucetPool",
       "discriminator": [207, 23, 94, 142, 183, 251, 218, 116]
-    },
-    {
-      "name": "Treasury",
-      "discriminator": [238, 239, 123, 238, 89, 1, 168, 253]
     }
   ],
   "types": [
@@ -130,12 +214,14 @@
         "kind": "struct",
         "fields": [
           { "name": "wallet",               "type": "pubkey" },
+          { "name": "pool",                 "type": "pubkey" },
           { "name": "parent",               "type": { "option": "pubkey" } },
           { "name": "debt",                 "type": "u64" },
           { "name": "total_claimed",        "type": "u64" },
           { "name": "total_repaid",         "type": "u64" },
           { "name": "referrals",            "type": "u32" },
           { "name": "referral_earnings",    "type": "u64" },
+          { "name": "referral_pending",     "type": "u64" },
           { "name": "has_claimed",          "type": "bool" },
           { "name": "promise_acknowledged", "type": "bool" },
           { "name": "registered_at",        "type": "i64" },
@@ -148,43 +234,31 @@
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "authority",              "type": "pubkey" },
-          { "name": "balance",                "type": "u64" },
-          { "name": "total_distributed",      "type": "u64" },
-          { "name": "claim_amount",           "type": "u64" },
-          { "name": "revenue_share_percent",  "type": "u64" },
-          { "name": "referral_bonus_percent", "type": "u64" },
-          { "name": "total_agents",           "type": "u32" },
-          { "name": "bump",                   "type": "u8" }
-        ]
-      }
-    },
-    {
-      "name": "Treasury",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "authority",           "type": "pubkey" },
-          { "name": "multisig",            "type": { "option": "pubkey" } },
-          { "name": "accumulated",         "type": "u64" },
-          { "name": "total_repaid",        "type": "u64" },
-          { "name": "total_referral_paid", "type": "u64" },
-          { "name": "bump",                "type": "u8" }
+          { "name": "authority",               "type": "pubkey" },
+          { "name": "multisig",                "type": { "option": "pubkey" } },
+          { "name": "balance",                 "type": "u64" },
+          { "name": "total_distributed",       "type": "u64" },
+          { "name": "total_repaid",            "type": "u64" },
+          { "name": "total_referral_paid",     "type": "u64" },
+          { "name": "total_pending_referrals", "type": "u64" },
+          { "name": "claim_amount",            "type": "u64" },
+          { "name": "revenue_share_percent",   "type": "u64" },
+          { "name": "referral_bonus_percent",  "type": "u64" },
+          { "name": "total_agents",            "type": "u32" },
+          { "name": "bump",                    "type": "u8" }
         ]
       }
     }
   ],
   "errors": [
-    { "code": 6000, "name": "AlreadyClaimed",        "msg": "Agent has already claimed their one-time airdrop" },
-    { "code": 6001, "name": "AgentNotRegistered",    "msg": "Agent is not registered" },
-    { "code": 6002, "name": "InsufficientBalance",   "msg": "Faucet has insufficient balance" },
-    { "code": 6003, "name": "InvalidParentAgent",    "msg": "Invalid parent: cannot refer yourself" },
-    { "code": 6004, "name": "OverRepayment",         "msg": "Cannot repay more than outstanding debt" },
-    { "code": 6005, "name": "Unauthorized",          "msg": "Signer is not the authority or configured multisig" },
-    { "code": 6006, "name": "MultisigNotSet",        "msg": "Multisig is not configured on this treasury" },
-    { "code": 6007, "name": "PromiseNotAcknowledged","msg": "Promise must be acknowledged to register" },
-    { "code": 6008, "name": "ZeroAmount",            "msg": "Amount must be greater than zero" },
-    { "code": 6009, "name": "ClaimAmountTooLarge",   "msg": "Claim amount exceeds safety ceiling" },
-    { "code": 6010, "name": "AuthorityMismatch",     "msg": "Faucet pool and treasury authority mismatch" }
+    { "code": 6000, "name": "AlreadyClaimed",      "msg": "Agent has already claimed their one-time airdrop" },
+    { "code": 6001, "name": "AgentNotRegistered",  "msg": "Agent is not registered" },
+    { "code": 6002, "name": "InsufficientBalance", "msg": "Faucet has insufficient balance" },
+    { "code": 6003, "name": "InvalidParentAgent",  "msg": "Invalid parent: cannot refer yourself or parent account not found" },
+    { "code": 6004, "name": "OverRepayment",       "msg": "Cannot repay more than outstanding debt" },
+    { "code": 6005, "name": "Unauthorized",        "msg": "Signer is not the authority or configured multisig" },
+    { "code": 6006, "name": "ZeroAmount",          "msg": "Amount must be greater than zero" },
+    { "code": 6007, "name": "ClaimAmountTooLarge", "msg": "Claim amount exceeds safety ceiling" },
+    { "code": 6008, "name": "AuthorityMismatch",   "msg": "Agent was registered with a different pool — cannot claim here" }
   ]
 }
