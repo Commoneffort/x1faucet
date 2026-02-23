@@ -44,3 +44,4 @@ Thumbs.db
 
 # ── Local promise acknowledgment files (written to ~/ by nexus_faucet_bridge) ─
 .agent_promise_*.json
+.relay_reg_count
