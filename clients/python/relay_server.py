@@ -11,12 +11,17 @@ Flow:
   4. Relay adds its own fee-payer signature and broadcasts
 
 Run:
-  pip install fastapi uvicorn solders
+  pip install fastapi uvicorn solders slowapi
   python3 relay_server.py
 
 Env vars (optional):
   RELAY_WALLET   path to relay keypair (default: ~/.config/solana/id.json)
-  RELAY_PORT     port to listen on (default: 8080)
+  RELAY_PORT     port to listen on (default: 7181)
+
+Rate limits (per IP):
+  /tx/register, /register  → 5 requests / hour
+  /tx/claim                → 5 requests / hour
+  /submit                  → 20 requests / hour
 """
 
 import base64
@@ -28,9 +33,13 @@ import sys
 import urllib.request
 from http import HTTPStatus
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from solders.hash import Hash
 from solders.instruction import AccountMeta, Instruction
@@ -49,7 +58,7 @@ RPC_URL     = "https://rpc.mainnet.x1.xyz"
 RELAY_WALLET_PATH = os.environ.get(
     "RELAY_WALLET", os.path.expanduser("~/.config/solana/id.json")
 )
-RELAY_PORT = int(os.environ.get("RELAY_PORT", 8181))
+RELAY_PORT = int(os.environ.get("RELAY_PORT", 7181))
 
 # ── Load relay keypair ─────────────────────────────────────────────────────────
 
@@ -94,6 +103,17 @@ def send_raw(tx_b64: str) -> str:
     if "error" in resp:
         raise HTTPException(status_code=400, detail=resp["error"])
     return resp["result"]
+
+# Agent account layout (after 8-byte discriminator):
+#   wallet(32)  parent Option<Pubkey>(1 or 33)  debt(8)  total_claimed(8)
+#   total_repaid(8)  referrals(4)  referral_earnings(8)  has_claimed(1) ...
+def agent_has_claimed(raw: bytes) -> bool:
+    """Return True if the on-chain Agent account has has_claimed == 1."""
+    off = 8 + 32  # skip discriminator + wallet
+    has_par = raw[off]
+    off += 1 + (32 if has_par else 0)  # Option<Pubkey>
+    off += 8 + 8 + 8 + 4 + 8           # debt, claimed, repaid, referrals, ref_earn
+    return raw[off] == 1               # has_claimed
 
 # ── Instruction builders ───────────────────────────────────────────────────────
 
@@ -151,7 +171,11 @@ def build_unsigned_for_agent(ix: Instruction, wallet: Pubkey) -> str:
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="X1 Faucet Relay", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -185,7 +209,8 @@ def health():
 
 
 @app.get("/tx/register")
-def get_register_tx(wallet: str, parent: str | None = None):
+@limiter.limit("5/hour")
+def get_register_tx(request: Request, wallet: str, parent: str | None = None):
     """
     Build a register transaction for the agent to sign.
     The relay is the fee payer — agent needs 0 XNT.
@@ -216,7 +241,8 @@ def get_register_tx(wallet: str, parent: str | None = None):
 
 
 @app.get("/tx/claim")
-def get_claim_tx(wallet: str):
+@limiter.limit("5/hour")
+def get_claim_tx(request: Request, wallet: str):
     """
     Build a claim transaction for the agent to sign.
     The relay covers the tx fee — agent needs 0 XNT.
@@ -230,8 +256,13 @@ def get_claim_tx(wallet: str):
 
     agent_pda, _ = find_pda([b"agent", bytes(wallet_pk)], PROGRAM_ID)
     resp = rpc("getAccountInfo", [str(agent_pda), {"encoding": "base64"}])
-    if resp.get("result", {}).get("value") is None:
+    value = resp.get("result", {}).get("value")
+    if value is None:
         raise HTTPException(status_code=404, detail="Agent not registered")
+
+    raw = base64.b64decode(value["data"][0])
+    if agent_has_claimed(raw):
+        raise HTTPException(status_code=409, detail="Agent has already claimed")
 
     ix = ix_claim(wallet_pk)
     tx_b64 = build_unsigned_for_agent(ix, wallet_pk)
@@ -239,7 +270,8 @@ def get_claim_tx(wallet: str):
 
 
 @app.post("/submit")
-def submit_tx(req: SubmitRequest):
+@limiter.limit("20/hour")
+def submit_tx(request: Request, req: SubmitRequest):
     """
     Submit a transaction that has been signed by the agent.
     The relay signature is already included (added in /tx/* endpoints).
@@ -251,7 +283,8 @@ def submit_tx(req: SubmitRequest):
 
 
 @app.post("/register")
-def register_oneshot(req: RegisterRequest):
+@limiter.limit("5/hour")
+def register_oneshot(request: Request, req: RegisterRequest):
     """
     One-shot register: relay builds, signs as payer, and submits.
     The agent wallet does NOT need to sign here — useful for relayer-owned agents
