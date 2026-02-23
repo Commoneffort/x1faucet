@@ -20,6 +20,7 @@ Coverage:
 
 import base64
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -115,15 +116,38 @@ def client():
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    """Zero counter and clear rate-limit storage before each test, restore after."""
+    """Zero counter and clear rate-limit storage before each test, restore after.
+
+    Also saves and restores the on-disk counter file so that test calls to
+    _save_counter() (triggered inside _check_and_bump_registrations) don't
+    corrupt the production counter file that the live relay service reads on
+    restart.
+    """
+    # Save on-disk counter so we can restore it after the test
+    counter_file = relay_server._COUNTER_FILE
+    try:
+        orig_file = open(counter_file).read()
+    except FileNotFoundError:
+        orig_file = None
+
     orig_count = relay_server._reg_count
     relay_server._reg_count = 0  # start each test from zero
+
     # Clear slowapi in-memory storage so rate limits don't bleed between tests
     storage = getattr(relay_server.limiter, "_storage", None)
     if storage and hasattr(storage, "reset"):
         storage.reset()
+
     yield
+
     relay_server._reg_count = orig_count
+    # Restore the disk counter to what it was before the test
+    if orig_file is not None:
+        with open(counter_file, "w") as f:
+            f.write(orig_file)
+    elif os.path.exists(counter_file):
+        os.unlink(counter_file)
+
     if storage and hasattr(storage, "reset"):
         storage.reset()
 
