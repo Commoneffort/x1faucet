@@ -19,8 +19,10 @@ At 100% repayment the pool grows to 23.2 XNT.
 | Network | X1 Mainnet |
 | RPC | `https://rpc.mainnet.x1.xyz` |
 | Program ID | `9zkypzFPQ2s3D5UqbYuixt3iXo5ig3ZNWLK1TrbNf5eR` |
+| IDL account | `F59nDpjipfusQmqUGXpytudGPvtGU2iejRQjGXmNJMUn` |
 | Authority | `DtZz8J1VHtVkAUBvKsh5oibb3wVeqn3B3EHR3unXnRkh` |
-| Pool PDA (v2) | `find_program_address(["pool_v2", authority], PROGRAM_ID)` |
+| Pool PDA (v2) | `E2qLABAjNaytZyt5WVenEgthq4cpBJFVPvrgVRDAiMxa` |
+| Relay | `http://193.34.212.186:7181` |
 
 ---
 
@@ -106,10 +108,6 @@ SECURITY_AUDIT_V2.md Full security audit + resolution log
 > Use `cargo build-sbf` directly.
 
 ```bash
-# Before Stage 2: copy lib_v2.rs to lib.rs
-cp program/programs/agent_faucet/src/lib_v2.rs \
-   program/programs/agent_faucet/src/lib.rs
-
 cd program
 cargo build-sbf
 ```

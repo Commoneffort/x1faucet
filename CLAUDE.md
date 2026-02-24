@@ -24,8 +24,8 @@ At 100% repayment, pool grows to 23.2 XNT.
 |---|---|
 | Program ID | `9zkypzFPQ2s3D5UqbYuixt3iXo5ig3ZNWLK1TrbNf5eR` |
 | Authority / deployer | `DtZz8J1VHtVkAUBvKsh5oibb3wVeqn3B3EHR3unXnRkh` |
-| Pool PDA (v2) | `find_program_address([b"pool_v2", bytes(AUTHORITY)], PROGRAM_ID)` |
-| IDL account | (re-publish after Stage 3 deploy) |
+| Pool PDA (v2) | `E2qLABAjNaytZyt5WVenEgthq4cpBJFVPvrgVRDAiMxa` |
+| IDL account | `F59nDpjipfusQmqUGXpytudGPvtGU2iejRQjGXmNJMUn` |
 | RPC | `https://rpc.mainnet.x1.xyz` |
 | Wallet path | `~/.config/solana/id.json` |
 
