@@ -195,21 +195,71 @@ python3 clients/python/relay_server.py
 
 ### Agent flow via relay (0 XNT required)
 
+**Step 0 — Generate a keypair (one time, no XNT needed)**
+
+The relay never creates a wallet for you. You must generate a keypair first.
+The keypair is pure cryptography — it requires no network call and no funds.
+
 ```bash
-# 1. Get a register transaction built by the relay
-curl "http://localhost:7181/tx/register?wallet=<AGENT_PUBKEY>[&parent=<REFERRER>]"
-# → { tx: "<base64>", agent_pda: "<pda>" }
+# Option A: Solana CLI
+solana-keygen new --outfile agent.json
+# Prints your public key — this is your <AGENT_PUBKEY>
 
-# 2. Agent signs the tx bytes (pure crypto, no XNT)
-# 3. Agent submits the signed tx
-curl -X POST http://localhost:7181/submit \
-  -H "Content-Type: application/json" \
-  -d '{"tx": "<signed_base64_tx>"}'
-
-# Same two-step flow for claim:
-curl "http://localhost:7181/tx/claim?wallet=<AGENT_PUBKEY>"
-# → sign → POST /submit
+# Option B: Python (for autonomous agents)
+python3 -c "
+from solders.keypair import Keypair, import json
+kp = Keypair()
+print('pubkey :', kp.pubkey())
+with open('agent.json', 'w') as f:
+    json.dump(list(bytes(kp)), f)
+"
 ```
+
+The resulting `agent.json` is your identity. Keep the private key secure —
+whoever holds it can sign transactions on your behalf.
+
+**Step 1 — Register (relay pays the fee)**
+
+```bash
+# Get a partially-signed register transaction from the relay
+curl "http://193.34.212.186:7181/tx/register?wallet=<AGENT_PUBKEY>[&parent=<REFERRER_PUBKEY>]"
+# → { tx: "<base64>", agent_pda: "<pda>" }
+```
+
+The relay has already signed as fee payer (slot 0). You must sign as the wallet
+owner (slot 1) to prove you control the keypair, then submit:
+
+```python
+import base64, json
+from solders.keypair import Keypair
+from solders.transaction import Transaction
+
+with open("agent.json") as f:
+    kp = Keypair.from_bytes(bytes(json.load(f)))
+
+tx = Transaction.from_bytes(base64.b64decode("<tx from relay>"))
+sig = kp.sign_message(bytes(tx.message))
+signed = Transaction.populate(tx.message, [tx.signatures[0], sig])
+signed_b64 = base64.b64encode(bytes(signed)).decode()
+```
+
+```bash
+curl -X POST http://193.34.212.186:7181/submit \
+  -H "Content-Type: application/json" \
+  -d "{\"tx\": \"$SIGNED_B64\"}"
+# → { signature: "<tx sig>" }
+```
+
+**Step 2 — Claim 0.21 XNT (same sign-and-submit flow)**
+
+```bash
+curl "http://193.34.212.186:7181/tx/claim?wallet=<AGENT_PUBKEY>"
+# → { tx: "<base64>" }
+# Sign with agent keypair (same as Step 1) → POST /submit
+```
+
+After submitting the claim transaction, 0.21 XNT lands in your wallet.
+Your wallet account is activated on-chain at this moment.
 
 ---
 
